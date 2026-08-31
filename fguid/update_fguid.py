@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Mise à jour automatique de fguid/index.html : ajoute à la page les journées de vol
-de F-GUID (hex 395103) publiées dans les archives ADS-B Exchange depuis la dernière
+de l'appareil suivi publiées dans les archives ADS-B Exchange depuis la dernière
 journée intégrée. Fusion additive : jours, passages < 1 km, temps < 10 km, stats.
 Ne modifie rien s'il n'y a pas de nouveau jour archivé.
 """
@@ -12,7 +12,6 @@ from zoneinfo import ZoneInfo
 import requests
 
 HEX = "395103"
-REG = "F-GUID"
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
 PARIS = ZoneInfo("Europe/Paris")
 MOIS = [None, "janvier", "février", "mars", "avril", "mai", "juin", "juillet",
@@ -37,7 +36,7 @@ html = open(PAGE, encoding="utf-8").read()
 m = re.search(r"^const D = (.*);$", html, re.M)
 if not m: sys.exit("const D introuvable")
 D = json.loads(m.group(1))
-ac = next(a for a in D["aircraft"] if a["reg"] == REG)
+ac = D["aircraft"][0]
 last_day = max(d["d"] for d in ac["days"])
 today = datetime.datetime.now(datetime.timezone.utc).date()
 start = datetime.date.fromisoformat(last_day) + datetime.timedelta(days=1)
