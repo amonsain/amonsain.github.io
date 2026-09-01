@@ -2,7 +2,7 @@ name: Update F-GUID page
 
 on:
   schedule:
-    - cron: "40 5,17 * * *"        # 2x/jour : 07 h 40 et 19 h 40 heure française (été)
+    - cron: "40 * * * *"         # toutes les heures, à H+40
   push:
     branches: [ "main" ]
     paths: [ "fguid/run-request.txt" ]
