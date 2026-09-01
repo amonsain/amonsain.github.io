@@ -208,6 +208,9 @@ const invMercY = y => (Math.atan(Math.exp(y / R2D)) * 2 - Math.PI / 2) * R2D;
 const W = p => [p[0], -mercY(p[1])];
 const bmImg = new Image(); let bmReady = false;
 bmImg.onload = () => { bmReady = true; draw(); };
+try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { COL = null; scheduleDraw(); }); } catch (e) {}
+new MutationObserver(() => { COL = null; scheduleDraw(); })
+  .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 bmImg.src = D.basemap.uri;
 
 let xmin = 1e9, xmax = -1e9, ymin = 1e9, ymax = -1e9;
@@ -217,25 +220,50 @@ for (const a of AC) for (const day of a.days) for (const seg of day.segs) for (c
 }
 
 // Path2D par (appareil, mois, classe) — clé mois = "AAAA-MM"
-const paths = {};   // paths[reg]["AAAA-MM"] = [Path2D x5]
+// deux niveaux de détail : lod0 = points bruts, lod1 = simplifié (~150 m) pour la vue éloignée
+const LOD_THR2 = 0.0015 * 0.0015;
+const paths = {};   // paths[reg]["AAAA-MM"] = {lod0:[Path2D x5], lod1:[Path2D x5]}
+function addSeg(ps, pts) {
+  for (let i = 1; i < pts.length; i++) {
+    const p = pts[i - 1], q = pts[i];
+    const k = cls(p[2] != null && q[2] != null ? (p[2] + q[2]) / 2 : null);
+    const [ax, ay] = W(p), [bx, by] = W(q);
+    ps[k].moveTo(ax, ay);
+    ps[k].lineTo(bx, by);
+  }
+}
 for (const a of AC) {
   paths[a.reg] = {};
   for (const day of a.days) {
     const m = day.d.slice(0, 7);
-    paths[a.reg][m] ||= CLASSES.map(() => new Path2D());
+    paths[a.reg][m] ||= { lod0: CLASSES.map(() => new Path2D()), lod1: CLASSES.map(() => new Path2D()) };
     for (const seg of day.segs) {
-      for (let i = 1; i < seg.pts.length; i++) {
-        const p = seg.pts[i - 1], q = seg.pts[i];
-        const k = cls(p[2] != null && q[2] != null ? (p[2] + q[2]) / 2 : null);
-        const [ax, ay] = W(p), [bx, by] = W(q);
-        paths[a.reg][m][k].moveTo(ax, ay);
-        paths[a.reg][m][k].lineTo(bx, by);
+      addSeg(paths[a.reg][m].lod0, seg.pts);
+      const simp = [seg.pts[0]];
+      let last = W(seg.pts[0]);
+      for (let i = 1; i < seg.pts.length - 1; i++) {
+        const w = W(seg.pts[i]);
+        const dx = w[0] - last[0], dy = w[1] - last[1];
+        if (dx * dx + dy * dy > LOD_THR2) { simp.push(seg.pts[i]); last = w; }
       }
+      simp.push(seg.pts[seg.pts.length - 1]);
+      addSeg(paths[a.reg][m].lod1, simp);
     }
   }
 }
 
 let scale = NaN, ox = 0, oy = 0, dpr = 1;
+let COL = null;
+function refreshCols() {
+  COL = { cl: CLASSES.map(c => css(c.varn)), line: css('--line'), muted: css('--muted'),
+          ink2: css('--ink-2'), accent: css('--accent'), surface: css('--surface') };
+}
+let drawQueued = false;
+function scheduleDraw() {
+  if (drawQueued) return;
+  drawQueued = true;
+  requestAnimationFrame(() => { drawQueued = false; draw(); });
+}
 function fit() {
   const r = canvas.getBoundingClientRect();
   if (!r.width) return;
@@ -279,8 +307,9 @@ function draw() {
     ctx.fillStyle = dark ? 'rgba(15,15,13,0.42)' : 'rgba(253,253,252,0.38)';
     ctx.fillRect(0, 0, r.width, r.height);
   }
-  ctx.strokeStyle = css('--line'); ctx.lineWidth = 1; ctx.globalAlpha = 0.6;
-  ctx.fillStyle = css('--muted'); ctx.font = '10.5px system-ui';
+  if (!COL) refreshCols();
+  ctx.strokeStyle = COL.line; ctx.lineWidth = 1; ctx.globalAlpha = 0.6;
+  ctx.fillStyle = COL.muted; ctx.font = '10.5px system-ui';
   const [wx0, wy0] = S2W(0, 0), [wx1] = S2W(r.width, r.height);
   for (let lon = Math.ceil(wx0 / 0.5) * 0.5, i = 0; lon < wx1 && i < 80; lon += 0.5, i++) {
     const sx = lon * scale + ox;
@@ -293,7 +322,7 @@ function draw() {
     ctx.fillText(lat.toFixed(1) + '°N', 5, sy - 4);
   }
   ctx.globalAlpha = 1;
-  ctx.fillStyle = css('--muted');
+  ctx.fillStyle = COL.muted;
   for (const s of D.ctx_sites) {
     const sx = s[0] * scale + ox, sy = -mercY(s[1]) * scale + oy;
     if (sx < -5 || sx > r.width + 5 || sy < -5 || sy > r.height + 5) continue;
@@ -302,16 +331,17 @@ function draw() {
   ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * ox, dpr * oy);
   ctx.lineWidth = 1.6 / scale; ctx.lineCap = 'round';
   ctx.globalAlpha = 0.85;
+  const lod = scale > 700 ? 'lod0' : 'lod1';
   for (const a of AC) {
     if (!selAC.has(a.reg)) continue;
     for (const [m, ps] of Object.entries(paths[a.reg])) {
       if (activeMonth !== 'all' && m !== activeMonth) continue;
-      ps.forEach((p, k) => { ctx.strokeStyle = css(CLASSES[k].varn); ctx.stroke(p); });
+      ps[lod].forEach((p, k) => { ctx.strokeStyle = COL.cl[k]; ctx.stroke(p); });
     }
   }
   ctx.globalAlpha = 1;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = css('--ink-2'); ctx.font = '600 11px system-ui';
+  ctx.fillStyle = COL.ink2; ctx.font = '600 11px system-ui';
   for (const t of D.towns) {
     const sx = t[0] * scale + ox, sy = -mercY(t[1]) * scale + oy;
     ctx.beginPath(); ctx.arc(sx, sy, 2.5, 0, 7); ctx.fill();
@@ -323,24 +353,41 @@ function draw() {
     const sz = 5 + Math.min(n, 4) * 1.4;
     ctx.beginPath(); ctx.moveTo(sx, sy - sz); ctx.lineTo(sx - sz * 0.9, sy + sz * 0.7);
     ctx.lineTo(sx + sz * 0.9, sy + sz * 0.7); ctx.closePath();
-    ctx.fillStyle = css('--accent'); ctx.globalAlpha = 0.9; ctx.fill(); ctx.globalAlpha = 1;
-    ctx.strokeStyle = css('--surface'); ctx.lineWidth = 1.4; ctx.stroke();
+    ctx.fillStyle = COL.accent; ctx.globalAlpha = 0.9; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.strokeStyle = COL.surface; ctx.lineWidth = 1.4; ctx.stroke();
   }
 }
 
 let dragging = false, lx = 0, ly = 0;
+let snap = null, snapOx = 0, snapOy = 0, blitQueued = false;
+function blit() {
+  if (blitQueued) return;
+  blitQueued = true;
+  requestAnimationFrame(() => {
+    blitQueued = false;
+    if (!snap) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(snap, (ox - snapOx) * dpr, (oy - snapOy) * dpr);
+  });
+}
 canvas.addEventListener('pointerdown', e => { dragging = true; lx = e.clientX; ly = e.clientY;
-  canvas.classList.add('drag'); canvas.setPointerCapture(e.pointerId); });
+  canvas.classList.add('drag'); canvas.setPointerCapture(e.pointerId);
+  snap = document.createElement('canvas');
+  snap.width = canvas.width; snap.height = canvas.height;
+  snap.getContext('2d').drawImage(canvas, 0, 0);
+  snapOx = ox; snapOy = oy; });
 canvas.addEventListener('pointermove', e => {
   if (dragging) {
-    ox += e.clientX - lx; oy += e.clientY - ly; lx = e.clientX; ly = e.clientY; draw(); hideTip();
+    ox += e.clientX - lx; oy += e.clientY - ly; lx = e.clientX; ly = e.clientY; blit(); hideTip();
   } else showTip(e);
 });
-canvas.addEventListener('pointerup', () => { dragging = false; canvas.classList.remove('drag'); });
+canvas.addEventListener('pointerup', () => { dragging = false; canvas.classList.remove('drag');
+  snap = null; scheduleDraw(); });
 function applyZoom(f, mx, my) {
   const ns = Math.min(Math.max(scale * f, 30), 120000);
   f = ns / scale;
-  ox = mx - (mx - ox) * f; oy = my - (my - oy) * f; scale = ns; draw();
+  ox = mx - (mx - ox) * f; oy = my - (my - oy) * f; scale = ns; scheduleDraw();
 }
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
