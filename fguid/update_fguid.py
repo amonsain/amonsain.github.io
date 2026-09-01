@@ -252,7 +252,13 @@ for ac in base["aircraft"]:
     hexid = ac["reg"]
     if not re.fullmatch(r"[0-9a-f]{6}", hexid):
         log(f"appareil {hexid}: pas une clé ICAO, ignoré"); continue
-    last = datetime.date.fromisoformat(max(d["d"] for d in ac["days"]))
+    if ac["days"]:
+        last = datetime.date.fromisoformat(max(d["d"] for d in ac["days"]))
+    elif ac.get("since"):
+        last = datetime.date.fromisoformat(ac["since"]) - datetime.timedelta(days=1)
+        log(f"{hexid} : nouvel appareil, backfill depuis {ac['since']}")
+    else:
+        log(f"{hexid} : aucune donnée ni date de départ, ignoré"); continue
     log(f"{hexid} : dernier jour archivé {last}")
     arch, live = [], []
     d = last + datetime.timedelta(days=1)
@@ -298,7 +304,7 @@ for ac in display["aircraft"]:
 if cache_dirty:
     json.dump(cache, open(CACHE_PATH, "w"), sort_keys=True)
 
-lastd = max(datetime.date.fromisoformat(a["days"][-1]["d"]) for a in display["aircraft"])
+lastd = max(datetime.date.fromisoformat(a["days"][-1]["d"]) for a in display["aircraft"] if a["days"])
 html = html[:m.start()] + "const D = " + json.dumps(display, ensure_ascii=False, separators=(",", ":")) + ";" + html[m.end():]
 html = re.sub(r"→ \d{1,2}(?:er)? [a-zéû]+ \d{4}", f"→ {lastd.day} {MOIS[lastd.month]} {lastd.year}", html, count=1)
 html = re.sub(r"(<title>[^<]*avril–)[a-zéû]+( \d{4})", rf"\g<1>{MOIS[lastd.month]}\g<2>", html, count=1)
