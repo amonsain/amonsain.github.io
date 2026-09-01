@@ -5,7 +5,7 @@ on:
     - cron: "40 * * * *"         # toutes les heures, à H+40
   push:
     branches: [ "main" ]
-    paths: [ "fguid/run-request.txt" ]
+    paths: [ "fguid/run-request.txt", "fguid/basemap-request.txt" ]
 
 jobs:
   update:
@@ -22,15 +22,22 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install requests
+      - run: pip install requests pillow
 
       - run: python3 fguid/update_fguid.py
+
+      - name: Rebuild basemap (si demandé)
+        run: |
+          if [ -f fguid/basemap-request.txt ]; then
+            python3 fguid/rebuild_basemap.py
+            rm fguid/basemap-request.txt
+          fi
 
       - name: Commit
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add fguid/index.html fguid/data_base.json fguid/elev_cache.json 2>/dev/null || git add fguid/index.html fguid/data_base.json
+          git add -A fguid
           git diff --staged --quiet && echo "rien de neuf" && exit 0
           git commit -m "fguid: mise à jour auto des données ADS-B"
           git pull --rebase origin main

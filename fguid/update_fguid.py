@@ -16,7 +16,6 @@ from zoneinfo import ZoneInfo
 
 import requests
 
-HEX = "395103"
 HERE = os.path.dirname(os.path.abspath(__file__))
 PAGE = os.path.join(HERE, "index.html")
 BASE_PATH = os.path.join(HERE, "data_base.json")
@@ -66,12 +65,12 @@ def parse_trace(j, day):
         pts.append([t, e[1], e[2], alt])
     return pts
 
-def fetch_archive(day):
+def fetch_archive(hexid, day):
     return http_json(f"https://globe.adsbexchange.com/globe_history/{day.year}/{day:%m}/{day:%d}"
-                     f"/traces/{HEX[-2:]}/trace_full_{HEX}.json")
+                     f"/traces/{hexid[-2:]}/trace_full_{hexid}.json")
 
-def fetch_live():
-    return http_json(f"https://globe.adsbexchange.com/data/traces/{HEX[-2:]}/trace_full_{HEX}.json")
+def fetch_live(hexid):
+    return http_json(f"https://globe.adsbexchange.com/data/traces/{hexid[-2:]}/trace_full_{hexid}.json")
 
 # ---------------- élévations (avec cache) ----------------
 cache = {}
@@ -205,8 +204,7 @@ def process(days, sites):
         if segs: C["days"].append({"d": day_iso, "segs": segs})
     return C
 
-def merge(D, C):
-    ac = D["aircraft"][0]
+def merge(ac, C):
     ac["days"] = sorted(ac["days"] + C["days"], key=lambda x: x["d"])
     ac["class_counts"] = [a + b for a, b in zip(ac["class_counts"], C["cc"])]
     by = {x["site"]: x for x in ac["sites"]}
@@ -248,55 +246,63 @@ else:
     json.dump(base, open(BASE_PATH, "w"), ensure_ascii=False, separators=(",", ":"))
     log("data_base.json initialisé depuis la page")
 
-last = datetime.date.fromisoformat(max(d["d"] for d in base["aircraft"][0]["days"]))
 today = datetime.datetime.now(datetime.timezone.utc).date()
-log(f"base : dernier jour archivé {last} ; aujourd'hui {today}")
+per_ac = {}       # reg(=hex) -> {"arch": [...], "live": [...]}
+for ac in base["aircraft"]:
+    hexid = ac["reg"]
+    if not re.fullmatch(r"[0-9a-f]{6}", hexid):
+        log(f"appareil {hexid}: pas une clé ICAO, ignoré"); continue
+    last = datetime.date.fromisoformat(max(d["d"] for d in ac["days"]))
+    log(f"{hexid} : dernier jour archivé {last}")
+    arch, live = [], []
+    d = last + datetime.timedelta(days=1)
+    while d < today:
+        j = fetch_archive(hexid, d)
+        if j:
+            pts = parse_trace(j, d)
+            if pts: arch.append((d.isoformat(), pts)); log(f"  archive {d}: {len(pts)} pts")
+        time.sleep(0.4)
+        d += datetime.timedelta(days=1)
+    in_arch = {x[0] for x in arch}
+    lj = fetch_live(hexid)
+    if lj:
+        for d in (today - datetime.timedelta(days=1), today):
+            if d > last and d.isoformat() not in in_arch:
+                pts = parse_trace(lj, d)
+                if pts: live.append((d.isoformat(), pts)); log(f"  live {d}: {len(pts)} pts (provisoire)")
+    if arch or live: per_ac[hexid] = {"arch": arch, "live": live}
 
-# 1. journées archivées manquantes (définitives)
-arch = []
-d = last + datetime.timedelta(days=1)
-while d < today:
-    j = fetch_archive(d)
-    if j:
-        pts = parse_trace(j, d)
-        if pts: arch.append((d.isoformat(), pts)); log(f"  archive {d}: {len(pts)} pts")
-    time.sleep(0.4)
-    d += datetime.timedelta(days=1)
-
-# 2. live : jour en cours + éventuel hier pas encore archivé (couvert ~24 h)
-in_arch = {x[0] for x in arch}
-live = []
-lj = fetch_live()
-if lj:
-    for d in (today - datetime.timedelta(days=1), today):
-        if d > last and d.isoformat() not in in_arch:
-            pts = parse_trace(lj, d)
-            if pts: live.append((d.isoformat(), pts)); log(f"  live {d}: {len(pts)} pts (provisoire)")
-
-if not arch and not live:
+if not per_ac:
     log("rien de neuf"); sys.exit(0)
 
 sites = fetch_sites(base)
 if sites is None: sys.exit("sites ParaglidingEarth indisponibles")
-if not add_elevations(arch + live): sys.exit("élévations indisponibles")
+all_days = [x for v in per_ac.values() for x in v["arch"] + v["live"]]
+if not add_elevations(all_days): sys.exit("élévations indisponibles")
 
-if arch:
-    merge(base, process(arch, sites))
+base_dirty = False
+for ac in base["aircraft"]:
+    v = per_ac.get(ac["reg"])
+    if v and v["arch"]:
+        merge(ac, process(v["arch"], sites)); base_dirty = True
+        log(f"{ac['reg']} : base consolidée +{len(v['arch'])} jour(s)")
+if base_dirty:
     json.dump(base, open(BASE_PATH, "w"), ensure_ascii=False, separators=(",", ":"))
-    log(f"base consolidée : +{len(arch)} jour(s) archivé(s)")
 
 display = copy.deepcopy(base)
-if live:
-    merge(display, process(live, sites))
+for ac in display["aircraft"]:
+    v = per_ac.get(ac["reg"])
+    if v and v["live"]:
+        merge(ac, process(v["live"], sites))
 
 if cache_dirty:
     json.dump(cache, open(CACHE_PATH, "w"), sort_keys=True)
 
-lastd = datetime.date.fromisoformat(display["aircraft"][0]["days"][-1]["d"])
+lastd = max(datetime.date.fromisoformat(a["days"][-1]["d"]) for a in display["aircraft"])
 html = html[:m.start()] + "const D = " + json.dumps(display, ensure_ascii=False, separators=(",", ":")) + ";" + html[m.end():]
 html = re.sub(r"→ \d{1,2}(?:er)? [a-zéû]+ \d{4}", f"→ {lastd.day} {MOIS[lastd.month]} {lastd.year}", html, count=1)
 html = re.sub(r"(<title>[^<]*avril–)[a-zéû]+( \d{4})", rf"\g<1>{MOIS[lastd.month]}\g<2>", html, count=1)
 open(PAGE, "w", encoding="utf-8").write(html)
-st = display["aircraft"][0]["stats"]
-log(f"page mise à jour : archives +{len(arch)}, live {len(live)} jour(s) provisoire(s), "
-    f"dernier jour {lastd}, {st['hours']} h, {st['npass']} passages")
+for a in display["aircraft"]:
+    log(f"  {a['reg']}: {a['stats']['ndays']} j, {a['stats']['hours']} h, {a['stats']['npass']} passages")
+log(f"page mise à jour, dernier jour {lastd}")
