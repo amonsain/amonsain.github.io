@@ -95,7 +95,7 @@
 <header>
   <div class="eyebrow">Analyse ADS-B · 21 avril → 2 septembre 2026</div>
   <h1>Les écureuils, au-dessus des sites de parapente</h1>
-  <p style="margin:10px 0 0;font-size:13px;color:var(--ink-2)">Source : ADS-B Exchange, données de vol publiques — <a href="https://globe.adsbexchange.com/?icao=395103" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">395103&nbsp;↗</a> · <a href="https://globe.adsbexchange.com/?icao=399519" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">399519&nbsp;↗</a> · <a href="https://globe.adsbexchange.com/?icao=398d0e" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">398d0e&nbsp;↗</a></p>
+  <p style="margin:10px 0 0;font-size:13px;color:var(--ink-2)">Source : ADS-B Exchange, données de vol publiques — <a href="https://globe.adsbexchange.com/?icao=395103" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">395103&nbsp;↗</a> · <a href="https://globe.adsbexchange.com/?icao=399519" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">399519&nbsp;↗</a> · <a href="https://globe.adsbexchange.com/?icao=398d0e" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">398d0e&nbsp;↗</a> · <span id="sync"></span></p>
 </header>
 
 <div class="tiles">
@@ -141,7 +141,7 @@
   <p class="note">Distance minimale mesurée sur les points ADS-B (échantillonnage irrégulier : la
   distance réelle peut être inférieure). Δalt = altitude de l'hélico moins altitude du déco au point
   le plus proche ; négatif = passage <em>sous</em> le niveau du décollage. Les lignes grisées sont des
-  transits en croisière, plus de 1 000 m au-dessus. Le tableau suit la sélection d'appareils ci-dessus.</p>
+  transits en croisière, plus de 1 000 m au-dessus. Le tableau suit la sélection d'appareils et de mois ci-dessus.</p>
   <div class="tblwrap"><table id="sitestbl">
     <thead><tr><th>Site</th><th>Dépt</th><th>Hélico</th><th class="num">Dist. mini</th>
       <th class="num">Δalt au + proche</th><th>Date · heure</th><th class="num">Δalt mini</th>
@@ -188,6 +188,27 @@ const D = {"aircraft":[{"reg":"395103","days":[{"d":"2026-04-21","segs":[{"pts":
 const AC = D.aircraft;
 const selAC = new Set(AC.map(a => a.reg));   // tous sélectionnés au départ
 let activeMonth = 'all';
+const SYNC = "2026-09-02T13:00:55Z";
+// filtre par mois : "20AA-MM" tiré de "JJ/MM/AA · ..." d'un passage
+const passMonth = p => p.t ? '20' + p.t.slice(6, 8) + '-' + p.t.slice(3, 5) : '';
+const inMonth = p => activeMonth === 'all' || passMonth(p) === activeMonth;
+// agrégats par site pour un appareil, recalculés depuis les passages quand un mois est filtré
+function siteAggFor(a) {
+  if (activeMonth === 'all') return a.sites;
+  const meta = new Map(a.sites.map(s => [s.site, s]));
+  const by = new Map();
+  for (const p of a.passages) {
+    if (!inMonth(p)) continue;
+    const mt = meta.get(p.site) || {};
+    let s = by.get(p.site);
+    if (!s) { s = { site: p.site, dept: p.dept, dmin: p.d, dz: p.dz, when: p.t.split('–')[0],
+                    dzmin: p.dz, n: 0, lat: mt.lat, lon: mt.lon, salt: mt.salt }; by.set(p.site, s); }
+    s.n++;
+    if (p.d < s.dmin) { s.dmin = p.d; s.dz = p.dz; s.when = p.t.split('–')[0]; }
+    if (p.dz != null && (s.dzmin == null || p.dz < s.dzmin)) s.dzmin = p.dz;
+  }
+  return [...by.values()];
+}
 
 // ---------- carte ----------
 const canvas = document.getElementById('map'), tip = document.getElementById('tip');
@@ -283,7 +304,8 @@ const visibleSites = () => {
   const seen = new Map();
   for (const a of AC) {
     if (!selAC.has(a.reg)) continue;
-    for (const s of a.sites) {
+    for (const s of siteAggFor(a)) {
+      if (s.lat == null) continue;
       const k = s.site;
       if (!seen.has(k)) seen.set(k, { site: s.site, dept: s.dept, lat: s.lat, lon: s.lon, salt: s.salt, per: [] });
       seen.get(k).per.push({ reg: a.reg, dmin: s.dmin, dz: s.dz, when: s.when, n: s.n });
@@ -446,7 +468,7 @@ mBox.addEventListener('click', e => {
   activeMonth = b.dataset.m;
   for (const c of mBox.querySelectorAll('.chip'))
     c.setAttribute('aria-pressed', String(c === b));
-  draw();
+  refresh();
 });
 
 // ---------- tuiles + légende + tableaux ----------
@@ -456,14 +478,18 @@ const passKey = p => p.k ?? 0;   // clé de tri chronologique fournie par l'anal
 function refresh() {
   const sel = AC.filter(a => selAC.has(a.reg));
   // tuiles
-  const hours = sel.reduce((t, a) => t + a.stats.hours, 0);
+  const allMonths = activeMonth === 'all';
+  const hours = sel.reduce((t, a) => t + a.stats.hours, 0);   // heures : période entière
   const near = sel.reduce((t, a) => t + a.stats.near10_h, 0);
-  const npass = sel.reduce((t, a) => t + a.stats.npass, 0);
+  const ndaysSel = allMonths ? sel.reduce((t, a) => t + a.stats.ndays, 0)
+    : sel.reduce((t, a) => t + a.days.filter(d => d.d.slice(0, 7) === activeMonth).length, 0);
+  const npass = allMonths ? sel.reduce((t, a) => t + a.stats.npass, 0)
+    : sel.reduce((t, a) => t + a.passages.filter(inMonth).length, 0);
   $('t-hours').textContent = hhmm(hours);
-  $('t-hours-l').textContent = `de vol · ${sel.reduce((t, a) => t + a.stats.ndays, 0)} jours-appareil`;
+  $('t-hours-l').textContent = `de vol (toute la période) · ${ndaysSel} jours-appareil`;
   $('t-near').innerHTML = hours ? `${Math.round(100 * near / hours)} %<small> (${hhmm(near)})</small>` : '—';
   $('t-pass').textContent = npass;
-  const allSites = sel.flatMap(a => a.sites.map(s => ({ ...s, reg: a.reg })));
+  const allSites = sel.flatMap(a => siteAggFor(a).map(s => ({ ...s, reg: a.reg })));
   const md = allSites.length ? allSites.reduce((b, s) => s.dmin < b.dmin ? s : b) : null;
   $('t-dmin').textContent = md ? `${md.dmin} m` : '—';
   $('t-dmin-l').textContent = md ? `distance mini — ${md.site} (${md.reg}), le ${md.when}` : 'distance minimale';
@@ -471,7 +497,14 @@ function refresh() {
   $('t-agl').textContent = hours ? `${Math.round(wsum / hours)} m` : '—';
   // légende
   const counts = [0, 0, 0, 0, 0];
-  sel.forEach(a => a.class_counts.forEach((c, i) => counts[i] += c));
+  if (allMonths) sel.forEach(a => a.class_counts.forEach((c, i) => counts[i] += c));
+  else for (const a of sel) for (const day of a.days) {
+    if (day.d.slice(0, 7) !== activeMonth) continue;
+    for (const sg of day.segs) for (let i = 1; i < sg.pts.length; i++) {
+      const x = sg.pts[i - 1][2], y = sg.pts[i][2];
+      counts[cls(x != null && y != null ? (x + y) / 2 : null)]++;
+    }
+  }
   $('legend').innerHTML =
     CLASSES.map((c, i) => `<span><i class="sw" style="background:var(${c.varn})"></i>${c.name}
       <span style="opacity:.65">(${counts[i].toLocaleString('fr-FR')})</span></span>`).join('') +
@@ -485,13 +518,19 @@ function refresh() {
      <td class="num${s.dzmin < 0 ? ' neg' : ''}">${s.dzmin > 0 ? '+' : ''}${s.dzmin} m</td>
      <td class="num">${s.n}</td></tr>`).join('');
   // passages
-  const allPass = sel.flatMap(a => a.passages.map(p => ({ ...p, reg: a.reg })));
+  const allPass = sel.flatMap(a => a.passages.filter(inMonth).map(p => ({ ...p, reg: a.reg })));
   allPass.sort((a, b) => passKey(a) - passKey(b));
   document.querySelector('#passtbl tbody').innerHTML = allPass.map(p =>
     `<tr><td>${p.t}</td><td><span class="regtag">${p.reg}</span></td><td>${p.site}</td><td>${p.dept}</td>
      <td class="num">${p.d} m</td><td class="num${p.dz < 0 ? ' neg' : ''}">${p.dz > 0 ? '+' : ''}${p.dz} m</td></tr>`).join('');
   // temps cumulé <10 km
-  const allDwell = sel.flatMap(a => a.dwell.map(d => ({ ...d, reg: a.reg })))
+  const allDwell = (allMonths
+    ? sel.flatMap(a => a.dwell.map(d => ({ ...d, reg: a.reg })))
+    : sel.flatMap(a => {
+        const per = {};
+        for (const p of a.passages) { if (inMonth(p)) per[p.site] = (per[p.site] || 0) + 1; }
+        return a.dwell.filter(d => per[d.site]).map(d => ({ ...d, reg: a.reg }));
+      }))
     .sort((a, b) => b.h - a.h).slice(0, 20);
   const maxh = allDwell.length ? allDwell[0].h : 1;
   document.querySelector('#dwelltbl tbody').innerHTML = allDwell.map(d =>
@@ -501,6 +540,14 @@ function refresh() {
   draw();
 }
 
+(function () {
+  const el = document.getElementById('sync');
+  if (!el || !/^\d{4}-/.test(SYNC)) return;
+  const d = new Date(SYNC);
+  const f = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', day: 'numeric',
+    month: 'short', hour: '2-digit', minute: '2-digit' }).format(d);
+  el.textContent = 'synchro ' + f.replace(':', ' h ');
+})();
 new ResizeObserver(resize).observe(canvas);
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
 new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });

@@ -305,6 +305,8 @@ if cache_dirty:
     json.dump(cache, open(CACHE_PATH, "w"), sort_keys=True)
 
 lastd = max(datetime.date.fromisoformat(a["days"][-1]["d"]) for a in display["aircraft"] if a["days"])
+now_iso = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+html = re.sub(r'const SYNC = "[^"]*";', f'const SYNC = "{now_iso}";', html, count=1)
 html = html[:m.start()] + "const D = " + json.dumps(display, ensure_ascii=False, separators=(",", ":")) + ";" + html[m.end():]
 html = re.sub(r"→ \d{1,2}(?:er)? [a-zéû]+ \d{4}", f"→ {lastd.day} {MOIS[lastd.month]} {lastd.year}", html, count=1)
 html = re.sub(r"(<title>[^<]*avril–)[a-zéû]+( \d{4})", rf"\g<1>{MOIS[lastd.month]}\g<2>", html, count=1)
