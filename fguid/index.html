@@ -394,19 +394,50 @@ function blit() {
     ctx.drawImage(snap, (ox - snapOx) * dpr, (oy - snapOy) * dpr);
   });
 }
-canvas.addEventListener('pointerdown', e => { dragging = true; lx = e.clientX; ly = e.clientY;
-  canvas.classList.add('drag'); canvas.setPointerCapture(e.pointerId);
+// pointeurs actifs (souris / doigts) — 1 = glisser, 2 = pincer (zoom + déplacement)
+const ptrs = new Map();
+let pinch = null;
+function startDrag(e) {
+  dragging = true; lx = e.clientX; ly = e.clientY;
+  canvas.classList.add('drag');
   snap = document.createElement('canvas');
   snap.width = canvas.width; snap.height = canvas.height;
   snap.getContext('2d').drawImage(canvas, 0, 0);
-  snapOx = ox; snapOy = oy; });
+  snapOx = ox; snapOy = oy;
+}
+function pinchState() {
+  const [a, b] = [...ptrs.values()], r = canvas.getBoundingClientRect();
+  return { d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2 - r.left, my: (a.y + b.y) / 2 - r.top };
+}
+canvas.addEventListener('pointerdown', e => {
+  ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  canvas.setPointerCapture(e.pointerId);
+  if (ptrs.size === 2) { dragging = false; snap = null; pinch = pinchState(); hideTip(); }
+  else if (ptrs.size === 1) startDrag(e);
+});
 canvas.addEventListener('pointermove', e => {
+  if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch && ptrs.size === 2) {
+    const s = pinchState();
+    ox += s.mx - pinch.mx; oy += s.my - pinch.my;          // suit le point médian
+    const ns = Math.min(Math.max(scale * (s.d / pinch.d), 30), 120000), f = ns / scale;
+    ox = s.mx - (s.mx - ox) * f; oy = s.my - (s.my - oy) * f; scale = ns;   // zoom autour du médian
+    pinch = s; scheduleDraw(); hideTip(); return;
+  }
   if (dragging) {
     ox += e.clientX - lx; oy += e.clientY - ly; lx = e.clientX; ly = e.clientY; blit(); hideTip();
-  } else showTip(e);
+  } else if (e.pointerType === 'mouse') showTip(e);
 });
-canvas.addEventListener('pointerup', () => { dragging = false; canvas.classList.remove('drag');
-  snap = null; scheduleDraw(); });
+function endPointer(e) {
+  ptrs.delete(e.pointerId);
+  if (ptrs.size < 2) pinch = null;
+  if (ptrs.size === 0) { dragging = false; canvas.classList.remove('drag'); snap = null; scheduleDraw(); }
+  else if (ptrs.size === 1) { const p = [...ptrs.values()][0]; startDrag({ clientX: p.x, clientY: p.y }); }
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+// tap sur un site (mobile) : affiche l'info-bulle
+canvas.addEventListener('click', e => { if (e.pointerType !== 'mouse') showTip(e); });
 function applyZoom(f, mx, my) {
   const ns = Math.min(Math.max(scale * f, 30), 120000);
   f = ns / scale;
