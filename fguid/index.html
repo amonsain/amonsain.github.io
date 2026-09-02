@@ -315,6 +315,36 @@ const visibleSites = () => {
   return [...seen.values()];
 };
 
+// --- tuiles OSM à la volée : fond net au zoom (le raster embarqué z9 reste en secours) ---
+const tiles = new Map(), TILE_MAX = 600;
+function tileImg(z, x, y) {
+  const key = z + '/' + x + '/' + y;
+  let t = tiles.get(key);
+  if (t) return t;
+  if (tiles.size >= TILE_MAX) tiles.delete(tiles.keys().next().value);
+  const img = new Image();
+  t = { img, ok: false };
+  img.onload = () => { t.ok = true; scheduleDraw(); };
+  img.onerror = () => {};
+  img.src = 'https://tile.openstreetmap.org/' + z + '/' + x + '/' + y + '.png';
+  tiles.set(key, t);
+  return t;
+}
+function drawTiles(r) {
+  const z = Math.max(6, Math.min(17, Math.round(Math.log2(360 * scale * dpr / 256))));
+  if (z <= 9) return;                                  // le raster embarqué suffit en vue éloignée
+  const n = 2 ** z, ts = 360 / n * scale;
+  const [wx0, wy0] = S2W(0, 0), [wx1, wy1] = S2W(r.width, r.height);
+  const tx0 = Math.floor((wx0 + 180) / 360 * n), tx1 = Math.floor((wx1 + 180) / 360 * n);
+  const ty0 = Math.floor((wy0 + 180) / 360 * n), ty1 = Math.floor((wy1 + 180) / 360 * n);
+  if ((tx1 - tx0 + 1) * (ty1 - ty0 + 1) > 150) return;
+  for (let tx = tx0; tx <= tx1; tx++) for (let ty = Math.max(0, ty0); ty <= Math.min(n - 1, ty1); ty++) {
+    const t = tileImg(z, ((tx % n) + n) % n, ty);
+    if (!t.ok) continue;
+    ctx.drawImage(t.img, (360 * tx / n - 180) * scale + ox, (360 * ty / n - 180) * scale + oy, ts + 0.5, ts + 0.5);
+  }
+}
+
 function draw() {
   const r = canvas.getBoundingClientRect();
   if (!r.width || !r.height || !isFinite(scale) || scale <= 0) return;
@@ -325,6 +355,7 @@ function draw() {
     const x0 = b.lon0 * scale + ox, y0 = -mercY(b.lat0) * scale + oy;
     const x1 = b.lon1 * scale + ox, y1 = -mercY(b.lat1) * scale + oy;
     ctx.drawImage(bmImg, x0, y0, x1 - x0, y1 - y0);
+    drawTiles(r);
     const dark = document.documentElement.dataset.theme === 'dark' ||
       (document.documentElement.dataset.theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
     ctx.fillStyle = dark ? 'rgba(15,15,13,0.42)' : 'rgba(253,253,252,0.38)';
