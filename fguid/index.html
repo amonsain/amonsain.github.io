@@ -89,6 +89,14 @@
   footer { margin-top: 44px; color: var(--muted); font-size: 12.5px; max-width: 80ch;
            border-top: 1px solid var(--line); padding-top: 14px; }
   footer a { color: var(--accent); }
+  #loading { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column;
+             align-items: center; justify-content: center; gap: 12px; text-align: center;
+             background: color-mix(in srgb, var(--surface) 84%, transparent); color: var(--ink-2); font-size: 14px; }
+  #loading small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+  #loading .spin { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--line);
+                   border-top-color: var(--accent); animation: spin .9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { #loading .spin { animation: none; } }
 </style>
 
 <div class="wrap">
@@ -127,6 +135,10 @@
   <div class="legend" id="legend"></div>
   <div class="mapbox">
     <canvas id="map" role="img" aria-label="Carte des trajectoires colorées par hauteur sol, avec les sites de parapente"></canvas>
+    <div id="loading" role="status" aria-live="polite">
+      <div class="spin"></div>
+      <div>Chargement des traces ADS-B…<small>≈ 4 Mo de données · quelques secondes sur mobile</small></div>
+    </div>
     <div class="maptools">
       <button id="zin" aria-label="Zoomer">+</button>
       <button id="zout" aria-label="Dézoomer">−</button>
@@ -229,7 +241,10 @@ const mercY = lat => Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) * R2D
 const invMercY = y => (Math.atan(Math.exp(y / R2D)) * 2 - Math.PI / 2) * R2D;
 const W = p => [p[0], -mercY(p[1])];
 const bmImg = new Image(); let bmReady = false;
-bmImg.onload = () => { bmReady = true; draw(); };
+function hideLoading() { const l = document.getElementById('loading'); if (l) l.remove(); }
+setTimeout(hideLoading, 12000);
+bmImg.onload = () => { bmReady = true; draw(); hideLoading(); };
+bmImg.onerror = hideLoading;
 try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { COL = null; scheduleDraw(); }); } catch (e) {}
 new MutationObserver(() => { COL = null; scheduleDraw(); })
   .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
