@@ -201,7 +201,7 @@ const D = {"aircraft":[{"reg":"395103","days":[{"d":"2026-04-21","segs":[{"pts":
 const AC = D.aircraft;
 const selAC = new Set(AC.map(a => a.reg));   // tous sélectionnés au départ
 let activeMonth = 'all';
-const SYNC = "2026-09-04T16:35:24Z";
+const SYNC = "2026-09-04T19:07:20Z";
 // filtre par mois : "20AA-MM" tiré de "JJ/MM/AA · ..." d'un passage
 const passMonth = p => p.t ? '20' + p.t.slice(6, 8) + '-' + p.t.slice(3, 5) : '';
 const inMonth = p => activeMonth === 'all' || passMonth(p) === activeMonth;
