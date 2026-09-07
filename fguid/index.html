@@ -624,7 +624,19 @@ function refresh() {
   const d = new Date(SYNC);
   const f = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', day: 'numeric',
     month: 'short', hour: '2-digit', minute: '2-digit' }).format(d);
-  el.textContent = 'synchro ' + f.replace(':', ' h ');
+  el.textContent = 'données du ' + f.replace(':', ' h ');
+})();
+(async () => {
+  try {
+    const r = await fetch('https://api.github.com/repos/amonsain/amonsain.github.io/actions/workflows/update-fguid.yml/runs?per_page=1&status=completed',
+      { headers: { Accept: 'application/vnd.github+json' } });
+    if (!r.ok) return;
+    const run = (await r.json()).workflow_runs?.[0];
+    if (!run) return;
+    const f = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', day: 'numeric',
+      month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(run.updated_at)).replace(':', ' h ');
+    document.getElementById('sync').textContent += ' · dernière vérification ' + f + (run.conclusion === 'success' ? ' ✓' : ' ✗');
+  } catch (e) {}
 })();
 new ResizeObserver(resize).observe(canvas);
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);

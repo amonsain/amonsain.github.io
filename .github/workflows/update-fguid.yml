@@ -2,7 +2,8 @@ name: Update F-GUID page
 
 on:
   schedule:
-    - cron: "40 * * * *"         # toutes les heures, à H+40
+    - cron: "15 * * * *"         # deux déclenchements par heure : GitHub retarde ou saute
+    - cron: "45 * * * *"         # souvent les crons, ça double les chances
   push:
     branches: [ "main" ]
     paths: [ "fguid/run-request.txt", "fguid/basemap-request.txt" ]
