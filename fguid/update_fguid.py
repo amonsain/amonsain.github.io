@@ -260,12 +260,24 @@ for ac in base["aircraft"]:
     else:
         log(f"{hexid} : aucune donnée ni date de départ, ignoré"); continue
     log(f"{hexid} : dernier jour archivé {last}")
+    bm = base["basemap"]
+    def prep(pts):
+        """options par appareil : clip = ne garder que l'emprise de la carte ; thin = 1 point / N s"""
+        if ac.get("clip"):
+            pts = [p for p in pts if bm["lon0"] <= p[2] <= bm["lon1"] and bm["lat1"] <= p[1] <= bm["lat0"]]
+        th = ac.get("thin")
+        if th:
+            out, last_t = [], -1e18
+            for p in pts:
+                if p[0] - last_t >= th: out.append(p); last_t = p[0]
+            pts = out
+        return pts
     arch, live = [], []
     d = last + datetime.timedelta(days=1)
     while d < today:
         j = fetch_archive(hexid, d)
         if j:
-            pts = parse_trace(j, d)
+            pts = prep(parse_trace(j, d))
             if pts: arch.append((d.isoformat(), pts)); log(f"  archive {d}: {len(pts)} pts")
         time.sleep(0.4)
         d += datetime.timedelta(days=1)
@@ -274,7 +286,7 @@ for ac in base["aircraft"]:
     if lj:
         for d in (today - datetime.timedelta(days=1), today):
             if d > last and d.isoformat() not in in_arch:
-                pts = parse_trace(lj, d)
+                pts = prep(parse_trace(lj, d))
                 if pts: live.append((d.isoformat(), pts)); log(f"  live {d}: {len(pts)} pts (provisoire)")
     if arch or live: per_ac[hexid] = {"arch": arch, "live": live}
 
@@ -283,8 +295,13 @@ if not per_ac:
 
 sites = fetch_sites(base)
 if sites is None: sys.exit("sites ParaglidingEarth indisponibles")
-all_days = [x for v in per_ac.values() for x in v["arch"] + v["live"]]
-if not add_elevations(all_days): sys.exit("élévations indisponibles")
+noelev = {a["reg"] for a in base["aircraft"] if a.get("noelev")}
+elev_days = [x for h, v in per_ac.items() if h not in noelev for x in v["arch"] + v["live"]]
+if elev_days and not add_elevations(elev_days): sys.exit("élévations indisponibles")
+for h, v in per_ac.items():
+    if h in noelev:
+        for _, pts in v["arch"] + v["live"]:
+            for p in pts: p.append(None)      # hauteur/sol inconnue -> classe transit
 
 base_dirty = False
 for ac in base["aircraft"]:
