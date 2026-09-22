@@ -347,7 +347,7 @@ function tileImg(z, x, y) {
 }
 function drawTiles(r) {
   const z = Math.max(6, Math.min(17, Math.round(Math.log2(360 * scale * dpr / 256))));
-  if (z <= 9) return;                                  // le raster embarqué suffit en vue éloignée
+  if (z <= (D.basemap.z || 9)) return;                 // le raster embarqué suffit en vue éloignée
   const n = 2 ** z, ts = 360 / n * scale;
   const [wx0, wy0] = S2W(0, 0), [wx1, wy1] = S2W(r.width, r.height);
   const tx0 = Math.floor((wx0 + 180) / 360 * n), tx1 = Math.floor((wx1 + 180) / 360 * n);

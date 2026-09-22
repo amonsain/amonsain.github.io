@@ -263,8 +263,10 @@ for ac in base["aircraft"]:
     bm = base["basemap"]
     def prep(pts):
         """options par appareil : clip = ne garder que l'emprise de la carte ; thin = 1 point / N s"""
-        if ac.get("clip"):
-            pts = [p for p in pts if bm["lon0"] <= p[2] <= bm["lon1"] and bm["lat1"] <= p[1] <= bm["lat0"]]
+        c = ac.get("clip")
+        if c:
+            lo0, lo1, la0, la1 = (c if isinstance(c, list) else [bm["lon0"], bm["lon1"], bm["lat1"], bm["lat0"]])
+            pts = [p for p in pts if lo0 <= p[2] <= lo1 and la0 <= p[1] <= la1]
         th = ac.get("thin")
         if th:
             out, last_t = [], -1e18

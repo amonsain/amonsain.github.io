@@ -22,10 +22,10 @@ for a in base["aircraft"]:
             for p in sg["pts"]:
                 lo[0] = min(lo[0], p[0]); lo[1] = max(lo[1], p[0])
                 la[0] = min(la[0], p[1]); la[1] = max(la[1], p[1])
-la = [la[0] - 0.08, la[1] + 0.08]; lo = [lo[0] - 0.08, lo[1] + 0.08]
+la = [la[0] - 0.15, la[1] + 0.15]; lo = [lo[0] - 0.15, lo[1] + 0.15]
 print(f"emprise traces+marge : lat {la[0]:.2f}..{la[1]:.2f} lon {lo[0]:.2f}..{lo[1]:.2f}")
 
-Z = 9; N = 2 ** Z
+Z = int(os.environ.get("BASEMAP_Z", 8)); N = 2 ** Z
 def xt(lon): return int((lon + 180) / 360 * N)
 def yt(lat): return int((1 - math.log(math.tan(math.radians(lat)) + 1 / math.cos(math.radians(lat))) / math.pi) / 2 * N)
 x0, x1 = xt(lo[0]), xt(lo[1])
@@ -50,7 +50,7 @@ for x in range(x0, x1 + 1):
 print(f"tuiles OK : {ok}")
 buf = io.BytesIO(); img.save(buf, "JPEG", quality=80)
 uri = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
-bm = {"uri": uri,
+bm = {"uri": uri, "z": Z,
       "lon0": x0 / N * 360 - 180, "lon1": (x1 + 1) / N * 360 - 180,
       "lat0": math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y0 / N)))),
       "lat1": math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * (y1 + 1) / N))))}
