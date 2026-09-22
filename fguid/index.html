@@ -4,27 +4,27 @@
   :root {
     --bg: #f7f6f3; --surface: #fdfdfc; --ink: #14130f; --ink-2: #565349;
     --muted: #8a8779; --line: #e3e1d8; --accent: #1c5cab;
-    --c1: #c62828; --c2: #e8702a; --c3: #c79a00; --c4: #2e7d32; --c5: #7189a8;
+    --c1: #c62828; --c2: #e8702a; --c3: #c79a00; --c4: #2e7d32; --c5: #3f57c9;
     --chip-bg: #edece6;
   }
   @media (prefers-color-scheme: dark) {
     :root:where(:not([data-theme="light"])) {
       --bg: #131311; --surface: #1c1c19; --ink: #f2f1ec; --ink-2: #b9b7ab;
       --muted: #85836f; --line: #2e2d28; --accent: #6ea8e8;
-      --c1: #ef5350; --c2: #ff8a50; --c3: #e6b422; --c4: #66bb6a; --c5: #8fa8c8;
+      --c1: #ef5350; --c2: #ff8a50; --c3: #e6b422; --c4: #66bb6a; --c5: #7f95ff;
       --chip-bg: #26261f;
     }
   }
   :root[data-theme="dark"] {
     --bg: #131311; --surface: #1c1c19; --ink: #f2f1ec; --ink-2: #b9b7ab;
     --muted: #85836f; --line: #2e2d28; --accent: #6ea8e8;
-    --c1: #ef5350; --c2: #ff8a50; --c3: #e6b422; --c4: #66bb6a; --c5: #8fa8c8;
+    --c1: #ef5350; --c2: #ff8a50; --c3: #e6b422; --c4: #66bb6a; --c5: #7f95ff;
     --chip-bg: #26261f;
   }
   :root[data-theme="light"] {
     --bg: #f7f6f3; --surface: #fdfdfc; --ink: #14130f; --ink-2: #565349;
     --muted: #8a8779; --line: #e3e1d8; --accent: #1c5cab;
-    --c1: #c62828; --c2: #e8702a; --c3: #c79a00; --c4: #2e7d32; --c5: #7189a8;
+    --c1: #c62828; --c2: #e8702a; --c3: #c79a00; --c4: #2e7d32; --c5: #3f57c9;
     --chip-bg: #edece6;
   }
   * { box-sizing: border-box; }
@@ -398,7 +398,7 @@ function draw() {
     ctx.globalAlpha = 0.55; ctx.beginPath(); ctx.arc(sx, sy, 2, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
   }
   ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * ox, dpr * oy);
-  ctx.lineWidth = 1.6 / scale; ctx.lineCap = 'round';
+  ctx.lineWidth = 1.9 / scale; ctx.lineCap = 'round';
   ctx.globalAlpha = 0.85;
   const lod = scale > 700 ? 'lod0' : 'lod1';
   for (const a of AC) {
